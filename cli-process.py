@@ -71,6 +71,8 @@ def menu(commands):
 def format_key(key):
     if ord(key) <= 26:
         return 'C-' + string.letters[ord(key) - 1] # my keyboard doesn't have a null character
+    elif key == ' ':
+        return 'SPACE'
     else:
         return key
 
@@ -92,6 +94,11 @@ class ShellRunner(object):
         terminal.write('Command:\n')
         command = self._read_command(terminal)
         run_command(command, line)
+        return True
+
+    def skip(self, terminal, line):
+        "Skip this line"
+        del terminal, line
         return True
 
     def run_no_consume(self, terminal, line):
@@ -190,9 +197,9 @@ def run(argv, stdin=None, terminal=None):
         '\x04': shell.exit,
         '^': shell.repeat,
         '>': shell.save_last,
+        ' ': shell.skip,
         '?': show_help,
         }
-
 
     terminal.write('cli-process\n')
     terminal.write('? - for help. Run with --help for documentation\n\n')
