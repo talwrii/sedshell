@@ -221,7 +221,12 @@ def run(argv, stdin=None, terminal=None):
             c = readchar(terminal)
             LOGGER.debug('mainloop: Running command %r for %r', c, line)
 
-            command = shell_store.lookup(c) or commands[c]
+            command = shell_store.lookup(c) or commands.get(c)
+
+            if command is None:
+                show_help(terminal, line)
+                continue
+
             LOGGER.debug('mainloop: Running command %r', command.__name__)
             finished = command(terminal, line)
             if finished:
