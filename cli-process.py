@@ -81,18 +81,15 @@ class ShellRunner(object):
         self._history = []
         self._store = store
 
-    def last(self):
-        return self._history[-1]
-
-    def _read_command(self, terminal):
+    def _read_command(self, terminal, consume):
+        terminal.write('Command:\n')
         command = terminal.readline().strip()
-        self._history.append(command)
+        self._history.append((command, consume))
         return command
 
     def run(self, terminal, line):
         "Run a shell command"
-        terminal.write('Command:\n')
-        command = self._read_command(terminal)
+        command = self._read_command(terminal, consume=True)
         run_command(command, line)
         return True
 
@@ -103,15 +100,16 @@ class ShellRunner(object):
 
     def run_no_consume(self, terminal, line):
         "Run a shell command, but allow other commands to run"
-        self.run(terminal, line)
+        command = self._read_command(terminal, consume=False)
+        run_command(command, line)
         return False
 
     def repeat(self, terminal, line):
         "Repeat the last command"
         del terminal
-        command = self._history[-1]
+        command, consume = self._history[-1]
         run_command(command, line)
-        return True
+        return consume
 
     def save_last(self, terminal, line):
         "Save the last command to a key"
@@ -119,7 +117,10 @@ class ShellRunner(object):
         terminal.write('Command letter?\n')
         terminal.flush()
         c = readchar(terminal)
-        self._store.store(c, self.last())
+
+        command, consume = self._history[-1]
+        print 'storing', command, consume
+        self._store.store(c, command, consume)
         return False
 
     def exit(self, terminal, line):
@@ -154,20 +155,20 @@ class ShellCommandStore(object):
     def __init__(self, config_dir):
         self._filename = os.path.join(config_dir, 'data.json')
 
-    def store(self, char, command):
+    def store(self, char, command, consume):
         with with_data(self._filename) as data:
             data.setdefault('commands', dict())
-            data['commands'][char] = command
+            data['commands'][char] = [command, consume]
 
     def lookup(self, char):
         with with_data(self._filename) as data:
             commands = data.setdefault('commands', dict())
             if char in commands:
-                command = commands[char]
+                command, consume = commands[char]
                 def runner(terminal, line):
                     del terminal
                     run_command(command, line)
-                    return True
+                    return consume
                 return runner
             else:
                 return None
