@@ -103,9 +103,9 @@ class Pipe(object):
             else:
                 LOGGER.debug('%r Waiting for more data', self)
                 if self.closed:
-                    return ''
+                    continue
                 else:
-                    self._event.get() # release lock
+                    self._event.get()
                     continue
 
     def _read_line_parts(self):

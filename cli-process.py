@@ -7,6 +7,7 @@ import logging
 import os
 import select
 import shutil
+import string
 import subprocess
 import sys
 import tempfile
@@ -62,11 +63,16 @@ def with_data(data_file):
 
 def menu(commands):
     "String describing possible actions"
-    return '''\
-    ! - Run a shell command with line as arguments
-    ^ - Repeat the last shell command
-    > - Save the last command to a key
-    '''
+    result = []
+    for key, command in sorted(commands.items()):
+        result.append('{} - {}'.format(format_key(key), command.__doc__))
+    return '\n' + '\n'.join(result) + '\n\n'
+
+def format_key(key):
+    if ord(key) <= 26:
+        return 'C-' + string.letters[ord(key) - 1] # my keyboard doesn't have a null character
+    else:
+        return key
 
 class ShellRunner(object):
     def __init__(self, store):
@@ -76,20 +82,32 @@ class ShellRunner(object):
     def last(self):
         return self._history[-1]
 
-    def run(self, terminal, line):
-        terminal.write('Command:\n')
+    def _read_command(self, terminal):
         command = terminal.readline().strip()
         self._history.append(command)
+        return command
+
+    def run(self, terminal, line):
+        "Run a shell command"
+        terminal.write('Command:\n')
+        command = self._read_command(terminal)
         run_command(command, line)
         return True
 
+    def run_no_consume(self, terminal, line):
+        "Run a shell command, but allow other commands to run"
+        self.run(terminal, line)
+        return False
+
     def repeat(self, terminal, line):
+        "Repeat the last command"
         del terminal
         command = self._history[-1]
         run_command(command, line)
         return True
 
     def save_last(self, terminal, line):
+        "Save the last command to a key"
         del line
         terminal.write('Command letter?\n')
         terminal.flush()
@@ -98,6 +116,7 @@ class ShellRunner(object):
         return False
 
     def exit(self, terminal, line):
+        "Exit"
         del terminal, line
         sys.exit()
 
@@ -159,32 +178,43 @@ def run(argv, stdin=None, terminal=None):
     shell_store = ShellCommandStore(args.config_dir)
     shell = ShellRunner(shell_store)
 
+    def show_help(terminal, line):
+        "List commands"
+        del line
+        terminal.write(menu(commands))
+        return False
+
     commands = {
         '!': shell.run,
+        '&': shell.run_no_consume,
         '\x04': shell.exit,
         '^': shell.repeat,
         '>': shell.save_last,
+        '?': show_help,
         }
 
+
+    terminal.write('cli-process\n')
+    terminal.write('? - for help. Run with --help for documentation\n\n')
+
     while True:
-        LOGGER.debug('Reading line')
+        LOGGER.debug('mainloop: Reading line')
         line = stdin.readline().strip()
-        LOGGER.debug('Read line %r', line)
+        LOGGER.debug('mainloop: Read line %r', line)
         if line == '':
             break
         else:
-            LOGGER.debug('Got input %r', line)
+            LOGGER.debug('mainloop: Got input %r', line)
 
-        terminal.write(line + "\n")
-        terminal.write(menu(commands))
 
         while True:
-            LOGGER.debug('Awaiting command for %r', line)
+            terminal.write(line + "\n")
+            LOGGER.debug('mainloop: Awaiting command for %r', line)
             c = readchar(terminal)
-            LOGGER.debug('Running command %r for %r', c, line)
+            LOGGER.debug('mainloop: Running command %r for %r', c, line)
 
             command = shell_store.lookup(c) or commands[c]
-            LOGGER.debug('Running command %r', command.__name__)
+            LOGGER.debug('mainloop: Running command %r', command.__name__)
             finished = command(terminal, line)
             if finished:
                 break
@@ -217,7 +247,7 @@ class StupidIpc(object):
                 pass
             else:
                 if data[0] == str(sought_seq):
-                    return
+                    return data
 
             time.sleep(0.01 * 2**i) # geometric backoff
         else:
@@ -260,10 +290,40 @@ class TestProcess(unittest.TestCase):
         self.stdin[0].close()
         self.terminal[0].write('!')
         self.terminal[0].write(self.ipc.write_command())
-        print run_thread.join()
+        run_thread.join()
 
         result = self.ipc.read()
         self.assertEquals(result[1], ["hello"])
+
+    def test_dont_run(self):
+        "Test & command does not consume"
+
+        run_thread = spawn(self.run_cli)
+        self.ipc.set_seq(1)
+        self.stdin[0].write('1\n2\n')
+        self.stdin[0].close()
+        self.terminal[0].write('&')
+        self.terminal[0].write(self.ipc.write_command())
+
+        result = self.ipc.await_seq(1)
+        self.assertEquals(result[1], ["1"])
+
+        self.ipc.set_seq(2)
+
+        self.terminal[0].write('!')
+        self.terminal[0].write(self.ipc.write_command())
+
+        result = self.ipc.await_seq(2)
+        # We didn't consume the first line with &
+        self.assertEquals(result[1], ["1"])
+
+        self.terminal[0].write('\x04')
+
+        run_thread.join()
+
+
+
+
 
     def test_exit(self):
         run_thread = spawn(self.run_cli)
