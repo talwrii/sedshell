@@ -132,7 +132,7 @@ def run_command(command, line):
     LOGGER.debug('Running %r', full_command)
     subprocess.check_call(full_command, shell=True)
 
-DEFAULT_CONFIG = os.path.join(os.environ['HOME'], 'cli-process')
+DEFAULT_CONFIG = os.path.join(os.environ['HOME'], '.config', 'cli-process')
 
 PARSER = argparse.ArgumentParser(description='')
 PARSER.add_argument('--debug', action='store_true', help='Print debug output')
