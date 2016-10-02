@@ -84,11 +84,12 @@ class ShellRunner(object):
     def _read_command(self, terminal, consume):
         terminal.write('Command:\n')
         command = terminal.readline().strip()
+
         self._history.append((command, consume))
         return command
 
     def run(self, terminal, line):
-        "Run a shell command"
+        "Run a shell command on the line"
         command = self._read_command(terminal, consume=True)
         run_command(command, line)
         return True
@@ -110,6 +111,24 @@ class ShellRunner(object):
         command, consume = self._history[-1]
         run_command(command, line)
         return consume
+
+    def run_raw(self, terminal, line):
+        "Run a command and print output (ignoring line)"
+        del line
+
+        terminal.write('Command:\n')
+        command = terminal.readline().strip()
+
+        p = subprocess.Popen(command, stdin=terminal, shell=True)
+        p.wait()
+
+    def run_shell(self, terminal, line):
+        "Start an interactive shell"
+        del line
+        shell = os.environ.get('SHELL', '/bin/bash')
+        p = subprocess.Popen([shell, '-i'], stdin=terminal)
+        p.wait()
+        return False
 
     def save_last(self, terminal, line):
         "Save the last command to a key"
@@ -206,7 +225,9 @@ def run(argv, stdin=None, terminal=None):
         '&': shell.run_no_consume,
         '\x04': shell.exit,
         '^': shell.repeat,
+        '$': shell.run_shell,
         '>': shell.save_last,
+        '<': shell.run_raw,
         ' ': shell.skip,
         '?': show_help,
         }
