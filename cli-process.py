@@ -1,10 +1,12 @@
 #!/usr/bin/python
 
+import abc
 import argparse
 import contextlib
 import json
 import logging
 import os
+import re
 import select
 import shutil
 import string
@@ -26,6 +28,36 @@ LOGGER = logging.getLogger()
 
 HERE = os.path.dirname(__file__) or '.'
 WRITER = os.path.join(HERE, 'write-to-file.py')
+
+class Command(object):
+    "An interface to process lines"
+    __metaclass__ = abc.ABCMeta
+
+    @abc.abstractmethod
+    def handle_line(self, terminal, line):
+        "Process a line of input. Return False if we haven't finished with the line"
+        return True
+
+    @abc.abstractmethod
+    def done_processing(self):
+        "Return True if this command should be replaced by another"
+        return True
+
+    @classmethod
+    def from_function(cls, func):
+        "Create a simple command that reads one line and processes it"
+        # This should probably do some sort of interning...
+        #   I'm not sure if classes garbage collect
+        #   well
+        class FunctionCommand(cls):
+            def handle_line(self, terminal, line):
+                return func(terminal, line)
+
+            def done_processing(self):
+                return True
+        FunctionCommand.name = func.__name__
+        FunctionCommand.doc  = func.__doc__
+        return FunctionCommand
 
 def readchar(stream, wait_for_char=True):
     if hasattr(stream, 'readchar'):
@@ -65,7 +97,7 @@ def menu(commands):
     "String describing possible actions"
     result = []
     for key, command in sorted(commands.items()):
-        result.append('{} - {}'.format(format_key(key), command.__doc__))
+        result.append('{} - {}'.format(format_key(key), command.doc))
     return '\n' + '\n'.join(result) + '\n\n'
 
 def format_key(key):
@@ -91,8 +123,8 @@ class ShellRunner(object):
     def run(self, terminal, line):
         "Run a shell command on the line"
         command = self._read_command(terminal, consume=True)
-        run_command(command, line)
-        return True
+        succeeded = run_command(command, line)
+        return succeeded
 
     def skip(self, terminal, line):
         "Skip this line"
@@ -109,8 +141,8 @@ class ShellRunner(object):
         "Repeat the last command"
         del terminal
         command, consume = self._history[-1]
-        run_command(command, line)
-        return consume
+        succeeded = run_command(command, line)
+        return consume and succeeded
 
     def run_raw(self, terminal, line):
         "Run a command and print output (ignoring line)"
@@ -150,7 +182,9 @@ class ShellRunner(object):
 def run_command(command, line):
     full_command = '{} {}'.format(command, line)
     LOGGER.debug('Running %r', full_command)
-    subprocess.check_call(full_command, shell=True)
+    p = subprocess.Popen(full_command, shell=True)
+    p.wait()
+    return p.returncode == 0
 
 DEFAULT_CONFIG = os.path.join(os.environ['HOME'], '.config', 'cli-process')
 
@@ -188,7 +222,7 @@ class ShellCommandStore(object):
                     del terminal
                     run_command(command, line)
                     return consume
-                return runner
+                return Command.from_function(runner)
             else:
                 return None
     def menu(self):
@@ -199,6 +233,35 @@ class ShellCommandStore(object):
                 execute_char = '!' if consume else '&'
                 result.append('{} - {} {}'.format(char, execute_char, command))
         return '\n' + '\n'.join(result) + '\n'
+
+
+def prompt(prompt_string, terminal):
+    terminal.write(prompt_string + '\n')
+    return terminal.readline().strip('\n')
+
+class SkipWhileCommand(Command):
+    name = 'skip_while'
+    doc = 'Skip entries until a regular expression stops matching'
+
+    def __init__(self):
+        Command.__init__(self)
+        self._regex = None
+        self._finished = False
+
+    def handle_line(self, terminal, line):
+        if self._regex is None:
+            self._regex = prompt('Regex:', terminal)
+
+        if not re.search(self._regex, line):
+            LOGGER.debug('Finished skipping')
+            terminal.write('\n')
+            self._finished = True
+            return False
+        else:
+            return True
+
+    def done_processing(self):
+        return self._finished
 
 def run(argv, stdin=None, terminal=None):
     args = PARSER.parse_args(argv)
@@ -221,19 +284,22 @@ def run(argv, stdin=None, terminal=None):
         return False
 
     commands = {
-        '!': shell.run,
-        '&': shell.run_no_consume,
-        '\x04': shell.exit,
-        '^': shell.repeat,
-        '$': shell.run_shell,
-        '>': shell.save_last,
-        '<': shell.run_raw,
-        ' ': shell.skip,
-        '?': show_help,
+        '!': Command.from_function(shell.run),
+        '&': Command.from_function(shell.run_no_consume),
+        '\x04': Command.from_function(shell.exit),
+        '^': Command.from_function(shell.repeat),
+        '$': Command.from_function(shell.run_shell),
+        '>': Command.from_function(shell.save_last),
+        '<': Command.from_function(shell.run_raw),
+        ' ': Command.from_function(shell.skip),
+        '?': Command.from_function(show_help),
+        '\\': SkipWhileCommand,
         }
 
     terminal.write('cli-process\n')
     terminal.write('? - for help. Run with --help for documentation\n\n')
+
+    command = None
 
     while True:
         LOGGER.debug('mainloop: Reading line')
@@ -247,18 +313,21 @@ def run(argv, stdin=None, terminal=None):
 
         while True:
             terminal.write(line + "\n")
-            LOGGER.debug('mainloop: Awaiting command for %r', line)
-            c = readchar(terminal)
-            LOGGER.debug('mainloop: Running command %r for %r', c, line)
+            if command is None or command.done_processing():
 
-            command = shell_store.lookup(c) or commands.get(c)
+                LOGGER.debug('mainloop: Awaiting command for %r', line)
+                c = readchar(terminal)
+                LOGGER.debug('mainloop: Running command %r for %r', c, line)
 
-            if command is None:
-                show_help(terminal, line)
-                continue
+                CommandClass = shell_store.lookup(c) or commands.get(c)
+                command = CommandClass()
 
-            LOGGER.debug('mainloop: Running command %r', command.__name__)
-            finished = command(terminal, line)
+                if command is None:
+                    show_help(terminal, line)
+                    continue
+
+            LOGGER.debug('mainloop: Running command %r', command.name)
+            finished = command.handle_line(terminal, line)
             if finished:
                 break
 
