@@ -1,1 +1,3 @@
 *.pyc
+sedshell.egg-info
+build
