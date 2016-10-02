@@ -263,6 +263,32 @@ class SkipWhileCommand(Command):
     def done_processing(self):
         return self._finished
 
+
+class SkipUntilCommand(Command):
+    name = 'skip_until'
+    doc = 'Skip entries until a regular expression matches'
+
+    def __init__(self):
+        Command.__init__(self)
+        self._regex = None
+        self._finished = False
+
+    def handle_line(self, terminal, line):
+        if self._regex is None:
+            self._regex = prompt('Regex:', terminal)
+
+        if re.search(self._regex, line, re.IGNORECASE):
+            LOGGER.debug('Finished skipping')
+            terminal.write('\n')
+            self._finished = True
+            return False
+        else:
+            return True
+
+    def done_processing(self):
+        return self._finished
+
+
 def run(argv, stdin=None, terminal=None):
     args = PARSER.parse_args(argv)
 
@@ -294,6 +320,7 @@ def run(argv, stdin=None, terminal=None):
         ' ': Command.from_function(shell.skip),
         '?': Command.from_function(show_help),
         '\\': SkipWhileCommand,
+        '/': SkipUntilCommand,
         }
 
     terminal.write('cli-process\n')
