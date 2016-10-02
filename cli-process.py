@@ -252,7 +252,7 @@ class SkipWhileCommand(Command):
         if self._regex is None:
             self._regex = prompt('Regex:', terminal)
 
-        if not re.search(self._regex, line):
+        if not re.search(self._regex, line, re.IGNORECASE):
             LOGGER.debug('Finished skipping')
             terminal.write('\n')
             self._finished = True
