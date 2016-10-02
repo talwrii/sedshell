@@ -19,7 +19,6 @@ DEFAULT_CONFIG = os.path.join(os.environ['HOME'], '.config', 'sedshell')
 
 PARSER = argparse.ArgumentParser(description='')
 PARSER.add_argument('--debug', action='store_true', help='Print debug output')
-PARSER.add_argument('--test', action='store_true', help='Print debug output')
 PARSER.add_argument('--config-dir', '-C', help='Directory to store configuration and data', default=DEFAULT_CONFIG)
 
 
@@ -96,12 +95,7 @@ def main():
     args, remaining = PARSER.parse_known_args()
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
-
-    if args.test:
-        sys.argv[1:] = remaining
-        unittest.main()
-    else:
-        run(sys.argv[1:])
+    run(sys.argv[1:])
 
 
 class ShellCommandStore(object):
