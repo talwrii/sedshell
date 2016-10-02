@@ -73,6 +73,13 @@ The tests are very blackbox, they test the program as a whole. for this tool thi
 
 Coverage is shoddy: a privilege for the project's author. If you send me a pull request I'm going to make you write tests for your features with full coverage :P.
 
+## Installing
+
+```bash
+python setup.py install
+sedshell
+```
+
 ## Similar tools
 
 I could not really find any direct analogues, however `vifm` in some way has a similar philosophy. Predictable tasks can be achieved with `xargs`.
