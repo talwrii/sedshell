@@ -172,6 +172,14 @@ class ShellCommandStore(object):
                 return runner
             else:
                 return None
+    def menu(self):
+        result = []
+        with with_data(self._filename) as data:
+            commands = data.setdefault('commands', dict())
+            for char, (command, consume) in sorted(commands.items()):
+                execute_char = '!' if consume else '&'
+                result.append('{} - {} {}'.format(char, execute_char, command))
+        return '\n' + '\n'.join(result) + '\n'
 
 def run(argv, stdin=None, terminal=None):
     args = PARSER.parse_args(argv)
@@ -190,6 +198,7 @@ def run(argv, stdin=None, terminal=None):
         "List commands"
         del line
         terminal.write(menu(commands))
+        terminal.write(shell_store.menu())
         return False
 
     commands = {
