@@ -347,7 +347,7 @@ def run(argv, stdin=None, terminal=None):
                 LOGGER.debug('mainloop: Running command %r for %r', c, line)
 
                 CommandClass = shell_store.lookup(c) or commands.get(c)
-                command = CommandClass()
+                command = CommandClass and CommandClass()
 
                 if command is None:
                     show_help(terminal, line)
