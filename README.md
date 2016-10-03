@@ -29,7 +29,7 @@ Command letter? <----- PRESSED "z"
 /tmp/things/send-to-lucy.jpg <----- PRESSED SPACE
 ```
 
-The saved command will be remembered the next time `sedshell` runs.
+The saved commands will be remembered the next time `sedshell` runs.
 
 ## Motivation
 
