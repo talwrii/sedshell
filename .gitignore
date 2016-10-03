@@ -1,3 +1,5 @@
 *.pyc
 sedshell.egg-info
 build
+dist
+env
